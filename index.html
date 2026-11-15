@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>海钓日和</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+  /* Layout: full-bleed 3D scene; glass HUD pinned to the edges, prompt and meters bottom-centre. Single dark look by design. */
+  :root {
+    color-scheme: dark;
+    --bg: #0b1722;
+    --ink: #f4f7fa;
+    --ink-dim: rgba(244, 247, 250, 0.72);
+    --panel: rgba(12, 24, 36, 0.5);
+    --panel-solid: rgba(14, 27, 40, 0.86);
+    --edge: rgba(255, 255, 255, 0.2);
+    --accent: #ffd27a;
+    --good: #7fe0a2;
+    --bad: #ff7b6b;
+    --a-color: #b5533f;
+    --b-color: #f0692f;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); }
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    color: var(--ink); -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  }
+  [hidden] { display: none !important; }
+  #scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .glass {
+    background: var(--panel); border: 1px solid var(--edge);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  }
+  .shadow-text { text-shadow: 0 1px 10px rgba(0, 20, 40, 0.6); }
+
+  /* ---- Menu ---- */
+  .menu {
+    position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
+    padding-block: 24px max(40px, env(safe-area-inset-bottom));
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    background: linear-gradient(to top, rgba(6, 18, 30, 0.72), rgba(6, 18, 30, 0) 55%);
+    pointer-events: none;
+  }
+  .menu > * { pointer-events: auto; }
+  .menu h1 { margin: 0; font-size: clamp(36px, 7vw, 60px); font-weight: 700; letter-spacing: 0.2em; text-indent: 0.2em; }
+  .menu p { margin: 8px 0 22px; color: var(--ink-dim); font-size: 15px; text-align: center; }
+  .pick { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; }
+  .pick button {
+    appearance: none; border-radius: 18px; padding: 14px 22px 14px 16px; min-width: 190px;
+    display: flex; align-items: center; gap: 12px; text-align: left;
+    transition: transform 0.15s, background 0.2s, border-color 0.2s;
+  }
+  .pick button:hover { transform: translateY(-2px); background: rgba(20, 40, 58, 0.66); border-color: rgba(255, 255, 255, 0.45); }
+  .pick button:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+  .menu .net { margin: 16px 0 0; font-size: 13px; min-height: 1.4em; }
+  .invite { display: flex; gap: 8px; margin-top: 10px; width: min(460px, 100%); }
+  .invite input { flex: 1; min-width: 0; border-radius: 999px; padding: 9px 14px; font: inherit; font-size: 13px; color: var(--ink); -webkit-user-select: text; user-select: text; }
+  .invite button { border-radius: 999px; padding: 9px 16px; font-size: 13px; white-space: nowrap; }
+  .invite button:hover { background: rgba(20, 40, 58, 0.66); }
+  .pick .dot { width: 38px; height: 38px; border-radius: 50%; flex: none; border: 3px solid rgba(255, 255, 255, 0.85); }
+  .pick .dot.a { background: linear-gradient(160deg, #26222c 50%, var(--a-color) 50%); }
+  .pick .dot.b { background: linear-gradient(160deg, #e2c184 50%, var(--b-color) 50%); }
+  .pick strong { display: block; font-size: 16px; }
+  .pick span { font-size: 12px; color: var(--ink-dim); }
+
+  /* ---- HUD ---- */
+  .topbar { position: fixed; left: max(14px, env(safe-area-inset-left, 0px)); top: max(12px, env(safe-area-inset-top)); display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { border-radius: 999px; padding: 7px 14px; font-size: 13px; display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+  .chip b { font-size: 15px; }
+  .chip .tag { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
+  .chip.mate .tag { background: #8fc7ff; }
+  .chip.best { color: var(--ink-dim); }
+  .chip.timer { font-weight: 700; font-size: 15px; min-width: 64px; justify-content: center; }
+  .chip.timer.urgent { background: rgba(190, 50, 36, 0.8); animation: pulse-plain 0.5s infinite alternate; }
+  @keyframes pulse-plain { to { opacity: 0.65; } }
+  .chip.pool { position: fixed; left: max(14px, env(safe-area-inset-left, 0px)); top: calc(max(12px, env(safe-area-inset-top)) + 44px); color: var(--accent); max-width: calc(100vw - 28px); }
+  .netbtn {
+    position: fixed; right: max(28px, env(safe-area-inset-right, 0px)); bottom: calc(max(28px, env(safe-area-inset-bottom)) + 90px);
+    width: 132px; height: 132px; border-radius: 50%; border: 4px solid #fff; appearance: none;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+    background: rgba(120, 44, 36, 0.9); color: #fff; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    transition: background 0.12s, transform 0.12s;
+  }
+  .netbtn strong { font-size: 24px; letter-spacing: 0.1em; }
+  .netbtn small { font-size: 12px; opacity: 0.9; }
+  .netbtn.green { background: rgba(38, 150, 86, 0.95); transform: scale(1.1); }
+  .netbtn:active { transform: scale(0.96); }
+  .results { width: min(520px, 94vw); }
+  .res-body { padding: 4px 22px 22px; }
+  .res-pool { margin: 6px 0 2px; font-size: 24px; font-weight: 700; color: var(--accent); text-wrap: balance; }
+  .res-fish { margin: 0 0 14px; color: var(--ink-dim); min-height: 1.2em; }
+  .res-scroll { overflow-x: auto; }
+  .results table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .results th { text-align: left; font-weight: 400; color: var(--ink-dim); font-size: 12px; padding: 6px 8px; }
+  .results td { padding: 9px 8px; border-top: 1px solid var(--edge); white-space: nowrap; }
+  .results td.num, .results th.num { text-align: right; }
+  .res-note { margin: 12px 0 0; font-size: 13px; color: var(--ink-dim); min-height: 1.3em; }
+  .res-actions { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  .res-actions button { appearance: none; border-radius: 999px; padding: 10px 20px; font-size: 15px; border: 1px solid var(--edge); background: transparent; }
+  .res-actions #again-btn { background: var(--accent); color: #1c2a38; border-color: transparent; font-weight: 700; }
+  .tools { position: fixed; right: max(14px, env(safe-area-inset-right, 0px)); top: max(12px, env(safe-area-inset-top)); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .tools > button, .weather button {
+    appearance: none; border: 0; background: transparent; font-size: 13px; padding: 7px 13px; border-radius: 999px;
+    transition: background 0.2s, color 0.2s;
+  }
+  .tools > button { border: 1px solid var(--edge); background: var(--panel); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .tools > button:hover, .weather button:hover { background: rgba(255, 255, 255, 0.14); }
+  .weather { display: flex; gap: 2px; padding: 4px; border-radius: 999px; }
+  .weather button[aria-pressed="true"] { background: rgba(255, 255, 255, 0.9); color: #14273a; font-weight: 600; }
+
+  .prompt {
+    position: fixed; left: 50%; bottom: max(28px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+    font-size: 16px; letter-spacing: 0.06em; padding: 10px 22px; border-radius: 999px; white-space: nowrap;
+    transition: opacity 0.2s; pointer-events: none;
+  }
+  .prompt:empty { opacity: 0; }
+  .prompt.urgent { background: rgba(255, 96, 70, 0.85); border-color: rgba(255, 255, 255, 0.6); font-weight: 700; animation: pulse 0.3s infinite alternate; }
+  @keyframes pulse { to { transform: translateX(-50%) scale(1.07); } }
+
+  .meter { position: fixed; left: 50%; bottom: calc(max(28px, env(safe-area-inset-bottom)) + 58px); transform: translateX(-50%); width: min(380px, 84vw); pointer-events: none; padding: 10px 14px 12px; border-radius: 16px; background: var(--panel); border: 1px solid var(--edge); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .meter .label { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-dim); margin-bottom: 5px; }
+  .track { position: relative; height: 16px; border-radius: 999px; overflow: hidden; background: rgba(8, 18, 28, 0.6); border: 1px solid var(--edge); }
+  #power .fill { height: 100%; width: 0; background: linear-gradient(90deg, #7fe0a2, #ffe07a 60%, #ff8a5c); border-radius: 999px; }
+  #tension .zone { position: absolute; top: 0; bottom: 0; }
+  #tension .zone.slack { left: 0; width: 10.7%; background: rgba(140, 170, 200, 0.5); }
+  #tension .zone.sweet { left: 31%; width: 45%; background: rgba(127, 224, 162, 0.55); }
+  #tension .zone.danger { left: 89.3%; right: 0; background: rgba(255, 110, 90, 0.75); }
+  #tension .marker { position: absolute; top: -3px; bottom: -3px; width: 6px; margin-left: -3px; border-radius: 3px; background: #fff; box-shadow: 0 0 10px rgba(255, 255, 255, 0.9); }
+  #fight.danger #tension { animation: shake 0.08s infinite alternate; }
+  @keyframes shake { to { transform: translateX(2px); } }
+  #reel-track { height: 8px; margin-top: 10px; }
+  #reel-track .fill { height: 100%; background: var(--accent); border-radius: 999px; width: 0; }
+
+  .bite {
+    position: fixed; width: 54px; height: 54px; margin: -80px 0 0 -27px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 34px; font-weight: 900; color: #fff;
+    background: #ff5a3c; border: 3px solid #fff; box-shadow: 0 6px 24px rgba(255, 70, 40, 0.6);
+    animation: pop 0.25s infinite alternate; pointer-events: none;
+  }
+  @keyframes pop { from { transform: scale(0.9); } to { transform: scale(1.15); } }
+
+  .catch {
+    position: fixed; right: max(5vw, 16px); top: 50%; transform: translateY(-50%); width: min(300px, 80vw);
+    border-radius: 22px; padding: 20px 22px 18px; background: var(--panel-solid); pointer-events: none;
+    animation: slide 0.35s cubic-bezier(0.2, 1.3, 0.4, 1);
+  }
+  @keyframes slide { from { opacity: 0; transform: translate(30px, -50%); } }
+  .catch .rarity { display: inline-block; font-size: 12px; padding: 3px 10px; border-radius: 999px; color: #10202e; font-weight: 700; }
+  .catch h2 { margin: 10px 0 2px; font-size: 26px; letter-spacing: 0.08em; }
+  .catch .size { font-size: 15px; color: var(--ink-dim); }
+  .catch .size b { font-size: 22px; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .catch .note { margin: 12px 0 14px; font-size: 13px; line-height: 1.6; color: var(--ink-dim); }
+  .catch .row { display: flex; justify-content: space-between; align-items: center; }
+  .catch .pts { font-size: 20px; font-weight: 700; color: var(--accent); }
+  .catch .flag { font-size: 12px; padding: 3px 9px; border-radius: 999px; background: rgba(255, 210, 122, 0.22); color: var(--accent); }
+  .catch svg { width: 100%; height: auto; margin-top: 4px; }
+
+  .toasts { position: fixed; left: 50%; top: max(104px, calc(env(safe-area-inset-top) + 96px)); transform: translateX(-50%); display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
+  .toast { padding: 9px 18px; border-radius: 999px; font-size: 14px; animation: toast 3s forwards; white-space: nowrap; }
+  .toast.bad { background: rgba(120, 30, 24, 0.75); }
+  @keyframes toast { 0% { opacity: 0; transform: translateY(-8px); } 8%, 82% { opacity: 1; transform: none; } 100% { opacity: 0; } }
+
+  dialog.journal {
+    border: 1px solid var(--edge); border-radius: 24px; padding: 0; color: var(--ink); background: var(--panel-solid);
+    width: min(720px, 94vw); max-height: 86vh; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  }
+  dialog.journal::backdrop { background: rgba(4, 12, 20, 0.5); }
+  .journal header { display: flex; justify-content: space-between; align-items: center; padding: 18px 22px 8px; }
+  .journal h2 { margin: 0; font-size: 20px; letter-spacing: 0.1em; }
+  .journal header button { appearance: none; border: 1px solid var(--edge); background: transparent; border-radius: 999px; padding: 6px 14px; font-size: 13px; }
+  .journal .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 10px 22px 22px; overflow: auto; max-height: calc(86vh - 70px); }
+  .card { border: 1px solid var(--edge); border-radius: 16px; padding: 10px 12px 12px; background: rgba(255, 255, 255, 0.05); }
+  .card svg { width: 100%; height: auto; }
+  .card.unknown svg { filter: brightness(0) invert(0.35); opacity: 0.6; }
+  .card strong { display: block; font-size: 15px; margin-top: 2px; }
+  .card small { color: var(--ink-dim); font-size: 12px; }
+  .card .r { font-size: 11px; font-weight: 700; }
+
+  @media (max-width: 1020px) {
+    .tools { top: calc(max(12px, env(safe-area-inset-top)) + 44px); gap: 6px; }
+    .toasts { top: calc(max(12px, env(safe-area-inset-top)) + 136px); }
+    .chip.pool { top: calc(max(12px, env(safe-area-inset-top)) + 88px); }
+  }
+  @media (max-width: 560px) {
+    .chip.best { display: none; }
+    .catch { right: 50%; top: auto; bottom: 130px; transform: translateX(50%); }
+    @keyframes slide { from { opacity: 0; transform: translate(50%, 20px); } }
+    .weather button { padding: 6px 9px; }
+  }
+  @media (prefers-reduced-motion: reduce) { .prompt.urgent, .bite, #fight.danger #tension, .chip.timer.urgent { animation: none; } }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div class="menu shadow-text" id="menu">
+  <h1>海钓日和</h1>
+  <p>选 Tao 或 Lulu 出海。另一个人会在旁边陪你一起钓。</p>
+  <div class="pick">
+    <button type="button" class="glass" data-pick="a"><i class="dot a"></i><span><strong>Tao</strong><span>黑长发 · 棕色外套</span></span></button>
+    <button type="button" class="glass" data-pick="b"><i class="dot b"></i><span><strong>Lulu</strong><span>金短发 · 橙色外套</span></span></button>
+  </div>
+  <p class="net" id="net-status" aria-live="polite">正在连接联机……</p>
+  <div class="invite" id="invite" hidden>
+    <input id="invite-url" class="glass" type="text" readonly aria-label="邀请链接">
+    <button type="button" class="glass" id="invite-copy">复制邀请链接</button>
+  </div>
+</div>
+
+<div id="hud" hidden>
+  <div class="topbar">
+    <div class="chip glass"><i class="tag"></i><span id="me-label">你</span> <b id="me-n">0</b> 条 · <b id="me-pts">0</b> 分</div>
+    <div class="chip glass mate"><i class="tag"></i><span id="mate-label">同伴</span> <b id="mate-n">0</b> 条 · <b id="mate-pts">0</b> 分</div>
+    <div class="chip glass timer" id="timer">5:00</div>
+    <div class="chip glass best">最高 <b id="best">0</b></div>
+  </div>
+  <div class="chip glass pool" id="pool">彩池：还没人上鱼</div>
+  <button type="button" class="netbtn" id="net-btn" hidden><strong id="net-word">抄网</strong><small id="net-sub"></small></button>
+  <div class="prompt glass" id="prompt"></div>
+  <div class="meter" id="power" hidden>
+    <div class="label"><span>近</span><span>抛竿力度</span><span>远</span></div>
+    <div class="track"><div class="fill"></div></div>
+  </div>
+  <div class="meter" id="fight" hidden>
+    <div class="label"><span>太松</span><span>鱼线张力</span><span>要断</span></div>
+    <div class="track" id="tension"><i class="zone slack"></i><i class="zone sweet"></i><i class="zone danger"></i><i class="marker"></i></div>
+    <div class="track" id="reel-track"><div class="fill"></div></div>
+  </div>
+  <div class="bite" id="bite" hidden>!</div>
+  <div class="catch glass" id="catch" hidden></div>
+</div>
+
+<div class="tools">
+  <button type="button" id="invite-btn" hidden>邀请</button>
+  <button type="button" id="quality-btn">画质：高</button>
+  <button type="button" id="mute-btn" aria-pressed="true">声音：开</button>
+  <button type="button" id="journal-btn">图鉴</button>
+  <div class="weather glass" role="group" aria-label="天气">
+    <button type="button" data-env="overcast" aria-pressed="false">阴天</button>
+    <button type="button" data-env="sunny" aria-pressed="true">晴天</button>
+    <button type="button" data-env="sunset" aria-pressed="false">黄昏</button>
+  </div>
+</div>
+<div class="toasts" id="toasts"></div>
+
+<dialog class="journal results" id="results">
+  <header><h2>彩池赛结算</h2></header>
+  <div class="res-body">
+    <p class="res-pool" id="res-pool"></p>
+    <p class="res-fish" id="res-fish"></p>
+    <div class="res-scroll"><table id="res-table"></table></div>
+    <p class="res-note" id="res-note"></p>
+    <div class="res-actions">
+      <button type="button" id="again-btn">再来一局</button>
+      <button type="button" id="free-btn">自由钓，不计时</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog class="journal" id="journal">
+  <header><h2>鱼类图鉴</h2><button type="button" id="journal-close">关闭</button></header>
+  <div class="grid" id="journal-grid"></div>
+</dialog>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
